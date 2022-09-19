@@ -1,7 +1,5 @@
 package org.gruzdov.cookiefactory.web.ui.router;
 
-import com.opencsv.CSVReaderBuilder;
-import com.opencsv.exceptions.CsvException;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.grid.Grid;
 import com.vaadin.flow.component.icon.VaadinIcon;
@@ -19,17 +17,17 @@ import org.apache.commons.lang3.exception.ExceptionUtils;
 import org.gruzdov.cookiefactory.entity.Cookie;
 import org.gruzdov.cookiefactory.factory.SimpleFactory;
 import org.gruzdov.cookiefactory.repository.CookieRepository;
+import org.gruzdov.cookiefactory.service.CookieParserService;
 import org.gruzdov.cookiefactory.web.ui.editor.CookieEditor;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.FileReader;
 import java.io.IOException;
 import java.math.BigDecimal;
-import java.util.HashSet;
+import java.util.Collection;
+import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Set;
 
 /**
  * @author Vladislav Gruzdov
@@ -44,6 +42,8 @@ public class MainView extends VerticalLayout {
 
     private final CookieRepository cookieRepository;
 
+    private final CookieParserService cookieParserService;
+
     private final CookieEditor cookieEditor;
 
     protected MemoryBuffer memoryBuffer;
@@ -53,8 +53,10 @@ public class MainView extends VerticalLayout {
     private File tempFile;
 
     @Autowired
-    public MainView(CookieRepository cookieRepository, CookieEditor cookieEditor) {
+    public MainView(CookieRepository cookieRepository, CookieParserService cookieParserService,
+                    CookieEditor cookieEditor) {
         this.cookieRepository = cookieRepository;
+        this.cookieParserService = cookieParserService;
         this.cookieEditor = cookieEditor;
         this.grid = new Grid<>(Cookie.class);
         this.filter = new TextField();
@@ -100,7 +102,7 @@ public class MainView extends VerticalLayout {
         });
 
         upload.addSucceededListener(event -> {
-            parseCsvFile(tempFile);
+            parseFile(tempFile);
             grid.setItems(cookieRepository.findAll());
         });
 
@@ -115,7 +117,9 @@ public class MainView extends VerticalLayout {
         } else {
             String[] range = filterText.split("-");
             if (range.length == 2) {
-                grid.setItems(cookieRepository.findByPriceBetween(new BigDecimal(range[0]), new BigDecimal(range[1])));
+                Collection<Cookie> cookies =
+                        cookieRepository.findByPriceBetween(new BigDecimal(range[0]), new BigDecimal(range[1]));
+                grid.setItems(cookies);
             }
 
         }
@@ -126,23 +130,9 @@ public class MainView extends VerticalLayout {
         return cookieEditor;
     }
 
-    protected void parseCsvFile(File file) {
-        final Set<Cookie> entities = new HashSet<>();
-
-        try (var reader = new CSVReaderBuilder(new FileReader(file)).build()) {
-            List<String[]> entries = reader.readAll();
-            entries.forEach(entry -> {
-                var cookie = SimpleFactory.create(Cookie.class);
-                cookie.setName(entry[0].trim());
-                cookie.setPrice(new BigDecimal(entry[1].trim()));
-
-                entities.add(cookie);
-            });
-
-            cookieRepository.saveAll(entities);
-        } catch (CsvException | IOException e) {
-            log.error(ExceptionUtils.getStackTrace(e));
-        }
+    protected void parseFile(File file) {
+        List<Cookie> entities = cookieParserService.parseFile(file);
+        cookieRepository.saveAll(new LinkedHashSet<>(entities));
     }
 
 }
